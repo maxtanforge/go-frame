@@ -1,0 +1,12 @@
+service:
+  name: records
+  env: dev
+http:
+  port: '3000'
+database:
+  driver: mysql
+# Supply DATABASE_URL through your environment manager.
+# This example never opens or migrates a database during config check/explain.
+
+id:
+  node: 0 # Explicit local example only; assign distinct values per replica.

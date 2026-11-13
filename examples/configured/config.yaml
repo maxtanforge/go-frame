@@ -1,0 +1,14 @@
+framework:
+  id:
+    node: 0 # ID_NODE: assign distinct nodes for concurrent service instances.
+  service:
+    name: configured
+    env: dev
+  http:
+    port: "3000"
+  log:
+    format: console # LOG_FORMAT=json for structured fields; sls for SLS JSON.
+host: 127.0.0.1
+business:
+  message: hello from YAML
+  labels: [example, configured]

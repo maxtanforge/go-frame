@@ -1,0 +1,33 @@
+version: "2"
+linters:
+  enable:
+    - errcheck
+    - govet
+    - staticcheck
+    - revive
+    - unused
+    - ineffassign
+    - errorlint
+    - nilerr
+    - misspell
+    - copyloopvar
+    - unconvert
+  settings:
+    staticcheck:
+      # QF1001 and QF1003 suggest optional style rewrites (De Morgan and tagged switches).
+      # Keep the other quick fixes, including redundant embedding and redundant types.
+      checks: ["all", "-QF1001", "-QF1003"]
+  exclusions:
+    rules:
+      # Internal packages are private to the module, so exported symbols need no public API comments.
+      - path: 'internal'
+        linters: [revive]
+        text: 'exported:'
+      # Generated Ent example packages follow the generator's comment conventions.
+      - path: 'examples/(ent/ent|business/internal/ent)/'
+        linters: [revive, staticcheck]
+        text: 'exported:|package-comments:|ST10'
+issues:
+  # Report all lint findings during verification.
+  max-issues-per-linter: 0
+  max-same-issues: 0

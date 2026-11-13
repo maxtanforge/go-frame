@@ -1,0 +1,12 @@
+.env
+.env.*
+secrets/
+*.local.yaml
+*.local.yml
+*.key
+*.pem
+bin/
+logs/
+.frame-dev/
+*.exe
+coverage.out

@@ -1,0 +1,18 @@
+# Binaries
+bin/
+.frame-dev/
+*.exe
+
+# Test
+*.out
+coverage.*
+
+# Env
+.env
+
+# Local file logs
+logs/
+
+# IDE
+.idea/
+.vscode/

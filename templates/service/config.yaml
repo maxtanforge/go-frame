@@ -1,0 +1,19 @@
+# Explicitly pass --config config.yaml. Secrets belong in the environment.
+host: 127.0.0.1
+trusted_proxies: "" # TRUSTED_PROXIES: explicit comma-separated proxy IPs/CIDRs.
+metrics_enabled: false # METRICS_ENABLED: expose /metrics only on a protected network.
+greeting:
+  prefix: Hello
+framework:
+  id:
+    node: 0 # ID_NODE: assign distinct nodes for concurrent service instances.
+  service:
+    name: service
+    env: dev
+  http:
+    port: "3000"
+    timeout: 30s
+  log:
+    format: console # json: structured fields; sls: SLS JSON (LOG_FORMAT=sls).
+    level: info
+    output: stdout
