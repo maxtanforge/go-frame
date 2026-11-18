@@ -2,8 +2,8 @@
 
 `Checker.Readiness(ctx)` 返回报告，`SetReady(false)` 控制排空。核心不导入 HTTP 或日志，
 可以用于后台任务、启动协调和测试。判定是否接流量使用 Report.Status；遍历完整失败
-原因使用 Report.Failures。当前 Checks 包含成功项与失败的可选项，不保证覆盖失败的
-必需项；不要仅以 Checks 内容判断整体健康。HTTP 端点使用
+原因使用 Report.Failures。执行探测时，Checks 为每个配置项记录 `ok` 或 `unavailable`。
+可选项和必需项的失败对总体状态有不同影响。HTTP 端点使用
 [http/health](../http/health/README.md) 适配。
 
 

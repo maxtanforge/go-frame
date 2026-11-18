@@ -111,19 +111,17 @@ func (c *Checker) Readiness(parent context.Context) Report {
 	c.startProbes(ctx, optional, c.optionalSlots, results)
 	states := collectResults(ctx, results, len(c.checks))
 	checks := make(map[string]string, len(c.checks))
-	var failed []string
+	var requiredFailed bool
 	var failures []Failure
 	degraded := false
 	for i, check := range c.checks {
 		if states[i] != nil {
 			failures = append(failures, Failure{Name: check.Name, Optional: check.Optional, Err: states[i]})
+			checks[check.Name] = "unavailable"
 			if check.Optional {
 				degraded = true
-				checks[check.Name] = "unavailable"
-
 			} else {
-				failed = append(failed, check.Name)
-
+				requiredFailed = true
 			}
 		} else {
 			checks[check.Name] = "ok"
@@ -132,7 +130,7 @@ func (c *Checker) Readiness(parent context.Context) Report {
 	if !c.ready.Load() {
 		return Report{Status: "draining"}
 	}
-	if len(failed) > 0 {
+	if requiredFailed {
 		return Report{Status: "unavailable", Checks: checks, Failures: failures}
 	}
 	status := "ready"

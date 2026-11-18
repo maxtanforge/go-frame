@@ -43,6 +43,8 @@ func TestReadinessReportsSortedRequiredFailures(t *testing.T) {
 	require.Equal(t, "mid", report.Failures[0].Name)
 	require.Equal(t, "zeta", report.Failures[1].Name)
 	require.Equal(t, "ok", report.Checks["alpha"])
+	require.Equal(t, "unavailable", report.Checks["mid"])
+	require.Equal(t, "unavailable", report.Checks["zeta"])
 }
 
 func TestReadinessOptionalFailureDegrades(t *testing.T) {
