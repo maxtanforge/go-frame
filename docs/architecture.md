@@ -49,7 +49,7 @@ Redis Pool 拥有原生客户端，缓存、租约与指标适配借用，不重
 
 新服务以服务模板的装配方式为准。需要借用已启动资源的组合 Hook 应显式声明
 `DependsOn`。资源就绪后构造完整路由和服务，再通过 `Group.Add` 注册。
-框架管理已注册服务和资源 Hook 的生命周期，业务 bootstrap 负责选择驱动、连接业务依赖
+启动回滚先关闭 App 直接管理的 Group 已接纳的服务，再逆序停止资源 Hook。业务 bootstrap 负责选择驱动、连接业务依赖
 以及登记额外资源的清理。[分类示例](../examples/business/internal/bootstrap/app.go) 展示同样的装配方式。
 
 普通业务入口优先用 `Route.Bind` 和 `Collect` 验证功能内的声明。认证服务由 bootstrap
@@ -147,13 +147,13 @@ MQ 消费、Nacos 配置源和对象存储不作为当前架构扩展目标；�
 | 资源启动、检查、清理 | `resource.New` 的 Hook/Probe/Value | 按启动顺序装配；不是全局依赖注册表 |
 | 模块启动依赖（v0.1.3） | `app.Hook.DependsOn` | 启动前编译稳定拓扑序，缺失/重复/循环依赖阻止启动；服务排空后反向清理，失败 Hook 的部分初始化也回滚 |
 | 共享执行预算（v0.1.3） | `concurrency.NewExecutor`、`Do/Shutdown/Stats` | 默认并发快照 GOMAXPROCS；运行/等待数量和时间显式预算，关闭准入后排空；不改全局 CPU 配置，不产生隐式后台任务 |
-| 多服务与后台任务 | `app.NewGroup`、`Group.Add`、`app.NewTask` | 可先创建空 Group，在资源就绪的组合 Hook 中注册服务；Run 时仍为空则失败，Run/停机后冻结；关键成员退出触发整体排空，Group 不推断依赖停止顺序 |
+| 多服务与后台任务 | `app.NewGroup`、`Group.Add`、`app.NewTask` | 支持组合阶段注册与启动回滚；Run 时仍为空则失败，Run/停机后冻结；嵌套 Group 按成员排空并汇总运行诊断，业务负责有序停止的依赖 |
 | 组合期资源回收 | `app.Cleanup.Add/Stop` | 零值可用，Stop 接入组合 Hook；逆序执行、逐项隔离 panic 并聚合错误、重复停止复用结果；无资源查询与自动注入 |
 | 可信代理客户端 IP | `request.NewClientIPResolver`、`ClientIP` | 显式 IP/CIDR，默认只取直接对端；有界 XFF 链从右向左检查，不作身份依据 |
 | 本地定时任务 | `schedule.New` | 间隔毫秒、五字段 Cron 显式时区；默认同任务不重叠、不补跑、不自动重试；多副本默认分别调度 |
 | Redis 租约 | `lock/redis.New`、`Locker.Acquire` | 借用连接、持有者检查、自动续期可选、失锁取消；释放等待受各自 context 限制，后台清理可能继续到原命令期限 |
 | 批量与并发准入 | `concurrency.Map`、`NewBoundedLimiter`、`middleware.Admission` | 固定 worker、有序结果、失败取消；显式等待数量/时间上限与过载拒绝，非分布式配额；旧 NewLimiter 等待数无界 |
-| 可降级依赖健康 | `health.Check.Optional` | 可选失败返回 degraded；独立探测池，启动失败策略仍由应用决定 |
+| 可降级依赖健康 | `health.Check.Optional` | 报告包含每项探测状态；可选失败返回 degraded；独立探测池，启动失败策略仍由应用决定 |
 | 出站 JSON 请求 | `httpclient.DoJSON`、`DoJSONRequest` | 有限响应读取、统一状态错误、自动关闭响应体；调用方决定业务错误映射 |
 | 原始出站请求／流式消费 | `httpclient.Client.Do` | 调用方负责关闭响应体，仍受客户端超时约束 |
 | 指标方法标签 | `middleware.MetricMethod`、`RequestEvent.MetricMethod` | 标准方法或 `_OTHER`；原始 Method 仅用于日志等非指标场景 |

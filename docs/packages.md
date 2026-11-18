@@ -8,7 +8,7 @@
 
 | 职责 | 组件 |
 |---|---|
-| 应用运行 | [app](../app/README.md)、[resource](../app/resource/README.md)、[服务命令](../app/command/README.md) |
+| 应用运行 | [app](../app/README.md) 管理服务排空与启动回滚，[resource](../app/resource/README.md) 管理资源所有权，[服务命令](../app/command/README.md) 分派入口命令 |
 | 配置与启动 | [通用配置](../config/README.md)、[来源](../config/loader/README.md)、[热重载](../config/reload/README.md)、[部署设置](../app/config/README.md)、[启动日志](../app/startup/README.md) |
 | 独立基础能力 | [ID](../id/README.md)、[分页](../pagination/README.md)、[校验](../validation/README.md)、[标签](../validation/tags/README.md)、[部分更新](../optional/README.md)、[并发](../concurrency/README.md) |
 | HTTP | [路由](../http/router/README.md)、[请求](../http/request/README.md)、[绑定](../http/binding/README.md)、[响应](../http/respond/README.md)、[健康端点](../http/health/README.md)、server、middleware、client、httperror |
@@ -49,7 +49,7 @@
 | 进程内对象缓存 | `cache/memory.New`，显式容量、LRU 和毫秒 TTL；创建方退出时 Close |
 | 共享 Redis 对象缓存 | `redis.Open` / `OpenReady` 创建 Pool，`cache/redis.New(pool.Client, ...)` 借用；只有 Pool 的所有者负责关闭连接 |
 | HTTP 输入和错误输出 | `binding.Query/JSON/Path/JSONWithPath/PathWithQuery` 组合声明式绑定、校验和响应；`request.Prepare` 与低层 Decode* 可独立使用；公开业务错误使用 `httperror.Error` |
-| 健康检查 | `health` 计算报告，`http/health` 输出端点；router 已接入 HTTP 适配 |
+| 健康检查 | `health` 计算总体及各依赖状态，`http/health` 输出端点；router 已接入 HTTP 适配 |
 | 表单、上传、XML | `binding.Form`、`PrepareMultipart`、`PrepareXML/XML`；[表单与流式上传](../http/request/FORM.md)、[XML 原始报文与响应](../http/request/XML.md)，[协议示例](../examples/protocols/README.md) |
 | Redis 租约锁 | [lock/redis](../lock/redis/README.md) 借用客户端，持有者比对、续期、失锁取消；不承诺跨故障绝对互斥 |
 | 定时任务与业务 worker | [schedule](../schedule/README.md) 提供毫秒间隔和显式时区 Cron；[background 示例](../examples/background/README.md) 组合 Task/Group 和业务消息确认 |

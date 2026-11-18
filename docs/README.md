@@ -58,6 +58,8 @@
 
 ## 交付与验证边界
 
+App 直接管理 Group 时，启动失败先关闭已接纳的服务，再逆序停止已进入的 Hook；正常停机按成员状态排空和关闭。
+
 验证入口见 [统一验证说明](verification.md)、[独立消费验收](development.md#独立消费工程验收)与 [集成测试](integration-testing.md)。按目标环境执行验证，未选择的测试不能视为通过。
 
 Redis 租约、本地定时任务、XML/表单上传、Ent CRUD 辅助与错误分类已实现。

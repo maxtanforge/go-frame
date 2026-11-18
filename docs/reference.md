@@ -6,7 +6,7 @@
 
 | 包 | 业务项目可以复用的能力 |
 |---|---|
-| `app` | 资源生命周期、命名服务组合、可取消后台任务、排空与逆序清理 |
+| `app` | 资源生命周期、命名服务组合、可取消后台任务、按成员排空与启动回滚 |
 | `concurrency` | 固定 worker 的有序批处理、进程内并发准入、有界等待与过载拒绝、取消与资源释放 |
 | `app/resource` | 通用资源装配：延迟创建、可选探活、带 context 的清理、部分初始化回滚 |
 | `http/server` | 标准库 HTTP 服务、TLS、资源限制及生命周期 |
@@ -160,7 +160,7 @@ Start 的 ctx 只用于初始化操作，启动完成后会取消；后台任务
 
 `health.New(health.Options{Checks: ...})` 产生 Checker，传给 router.Options.Health。`SetReady(false)` 用于退出前摘流；`/healthz` 继续表示进程存活，`/readyz` 返回 503。默认总检查预算 1s，必需探测共享 4 个槽位，可选探测独立共享 1 个槽位。`Check.Optional=true` 的探测失败返回 200／degraded，必需探测失败仍为 503；卡住的可选探测不会占用必需槽位。Probe 必须支持取消。该分类只影响运行期就绪，不改变资源启动失败回滚策略，详见 [health](../health/README.md)。
 
-多个关键服务和后台任务可通过 [`app.NewGroup`、`app.NewTask`](../app/README.md) 统一交给 App；任何成员提前退出都会触发整体退出处理。Group 并发停止成员，不推断成员间的依赖顺序，业务须自行处理需要有序排空的依赖。
+多个关键服务和后台任务可通过 [`app.NewGroup`、`app.NewTask`](../app/README.md) 统一交给 App；任何成员提前退出都会触发整体退出处理。Group 并发排空成员，并按成员的排空状态执行强制关闭。业务须自行处理需要有序排空的依赖。
 
 批量调用可用 [`concurrency.Map`](../concurrency/README.md) 控制 worker 数并保持输出顺序；单次操作准入用 `Limiter.Acquire` 或不等待的 `TryAcquire`。`NewBoundedLimiter(capacity, maxWaiters)` 同时限制执行与等待数量，等待位满返回 `ErrOverloaded`，等待时间由 context 控制；原有 `NewLimiter` 只限制执行数量。HTTP 可组合 [`middleware.Admission`](../http/middleware/README.md#admission)，服务过载或准入等待超时返回 503。这些能力不提供分布式配额或自动重试。
 
