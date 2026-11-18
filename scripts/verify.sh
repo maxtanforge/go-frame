@@ -29,6 +29,7 @@ if "$changed" && { "$consumer" || "$bench" || "$coverage"; }; then
     exit 2
 fi
 cd "$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+export GOWORK=off
 command -v go >/dev/null
 command -v gofmt >/dev/null
 command -v git >/dev/null

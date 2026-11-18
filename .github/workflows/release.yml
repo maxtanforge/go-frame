@@ -20,6 +20,7 @@ jobs:
       notes: ${{ steps.notes.outputs.body }}
     env:
       CGO_ENABLED: '1'
+      GOWORK: 'off'
     steps:
       - uses: actions/checkout@v6
         with:
@@ -59,6 +60,17 @@ jobs:
           sh scripts/verify.sh --race
       - name: Verify independent consumers
         run: go run ./scripts/consumer --repo . --mode workspace --network --race --budget 10m
+      - name: Verify tagged module download
+        env:
+          GONOPROXY: github.com/maxtanforge/go-frame
+        run: |
+          report="$RUNNER_TEMP/go-frame-remote-consumer.json"
+          if ! go run ./scripts/consumer --repo . --mode remote --version "$GITHUB_REF_NAME" --network --race --budget 10m > "$report"; then
+            cat "$report"
+            exit 1
+          fi
+          cat "$report"
+          jq -e --arg commit "$(git rev-parse HEAD)" '.source_commit == $commit' "$report"
 
   publish:
     needs: verify

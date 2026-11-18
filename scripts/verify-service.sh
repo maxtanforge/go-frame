@@ -25,6 +25,7 @@ trap cleanup EXIT HUP INT TERM
 mkdir -- "$work_dir"
 cp -R -- "$repo_root/templates/service/." "$work_dir/"
 cd -- "$work_dir"
+export GOWORK=off
 # Verification only: the source template never receives a local replace.
 frame_go mod edit "-replace=github.com/maxtanforge/go-frame=$repo_root"
 # Warm the dependency graph (test deps of dependencies included) with the

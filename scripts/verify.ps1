@@ -14,8 +14,10 @@ if ($Changed -and ($Consumer -or $Bench -or $Coverage)) {
     throw '-Changed is a smoke mode and cannot be combined with -Consumer, -Bench, or -Coverage.'
 }
 $repoRoot = Split-Path -Parent $PSScriptRoot
+$oldWork = $env:GOWORK
 Push-Location $repoRoot
 try {
+    $env:GOWORK = 'off'
     $null = Get-Command go, gofmt, git -ErrorAction Stop
     $goFiles = @(git ls-files --cached --others --exclude-standard -- '*.go')
     if ($LASTEXITCODE -ne 0) { throw 'Could not list Go source files.' }
@@ -67,5 +69,6 @@ try {
         Write-Host 'Verification passed.'
     }
 } finally {
+    $env:GOWORK = $oldWork
     Pop-Location
 }

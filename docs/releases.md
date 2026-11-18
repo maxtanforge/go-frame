@@ -19,8 +19,10 @@
 [Release 工作流](../.github/workflows/release.yml)核对标签、版本及提交是否属于
 `main` 的历史，执行 `sh scripts/verify.sh --race`，再用
 `go run ./scripts/consumer --repo . --mode workspace --network --race --budget 10m`
-验证独立消费工程。CI 允许下载缺失依赖，框架本身仍通过本地 `replace` 使用被标记的源码。通过后使用
-GitHub 内置令牌创建 Release，发布说明来自标签提交中对应版本的更新日志。
+验证独立消费工程。CI 允许下载缺失依赖，此步骤通过本地 `replace` 使用被标记的源码。
+随后以 `--mode remote --version "$GITHUB_REF_NAME"` 在无本地替换的工程中下载和使用标签。
+该步骤直接解析框架模块的 Git 标签，并核对下载来源提交与工作流检出的提交一致。其他依赖沿用模块代理配置。
+两项验证通过后，工作流使用 GitHub 内置令牌创建 Release，发布说明来自标签提交中对应版本的更新日志。
 
 ## 发布后验收
 

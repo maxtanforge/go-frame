@@ -14,6 +14,7 @@ try {
     Copy-Item -Path (Join-Path $repoRoot 'templates/service/*') -Destination $workDir -Recurse -Force
     Push-Location $workDir
     $pushed = $true
+    $env:GOWORK = 'off'
     # Verification only: the source template never receives a local replace.
     go mod edit "-replace=github.com/maxtanforge/go-frame=$repoRoot"
     if ($LASTEXITCODE -ne 0) { throw 'Could not apply verification-only replacement.' }
@@ -24,7 +25,6 @@ try {
     $env:GOFLAGS = '-p=1'
     $env:GOMAXPROCS = '2'
     $env:GOCACHE = Join-Path $tempRoot 'go-frame-enterprise-cache'
-    $env:GOWORK = 'off'
     $env:GOPROXY = 'off'
     $env:GOSUMDB = 'off'
     $env:GONOPROXY = 'none'

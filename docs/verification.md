@@ -25,7 +25,8 @@ golangci-lint 以钉住版本 `go run github.com/golangci/golangci-lint/v2/cmd/g
 （含 internal 目录与 Ent 生成目录的带理由豁免；取消同类问题截断，门槛必须看到全部结果）。
 格式检查不会自动改文件。任何步骤失败都返回失败状态；请求 race 而缺少 CGO 时会明确失败，
 不会静默跳过。race 还需要该平台支持的 C 编译器。运行时遵循当前进程的 Go 环境变量，
-例如 GOCACHE；不会执行 `go env -w`。
+例如 GOCACHE。统一验证脚本和服务模板验证脚本从第一条 Go 命令起使用 `GOWORK=off`，
+避免开发机的工作区改变验证所用的模块图。脚本不会执行 `go env -w`。
 
 ## 迭代冒烟与测量
 
