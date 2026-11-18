@@ -70,6 +70,16 @@ func (t *Task) stop() {
 // Shutdown cancels the callback and waits within ctx for its completion. A later
 // call can continue waiting after an earlier budget expired.
 func (t *Task) Shutdown(ctx context.Context) error {
+	if err := t.drain(ctx); err != nil {
+		return err
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.err
+}
+
+// drain leaves the callback result with Run when a supervisor observes both phases.
+func (t *Task) drain(ctx context.Context) error {
 	if ctx == nil {
 		return errors.New("app: shutdown context is required")
 	}
@@ -83,9 +93,7 @@ func (t *Task) Shutdown(ctx context.Context) error {
 			return ctx.Err()
 		}
 	}
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	return t.err
+	return nil
 }
 
 // Close requests cancellation immediately without waiting for the callback.

@@ -66,7 +66,8 @@ go mod tidy
 
 路径替换成自己的框架目录；发布业务前删除本地 replace 并固定所选版本。
 工作区验收只在临时副本内添加 replace。远程模式验证 GitHub 上实际可读取的版本。
-使用固定版本前先确认对应标签已发布。标签缺失时，可按上面的本地 replace 步骤联调。
+使用固定版本时，从对应发布标签复制模板，以匹配该版本的生命周期行为。
+从开发分支复制模板时，按上面的本地 replace 步骤与同一工作区的框架联调，直至对应版本发布。
 
 ## 开发、检查和构建
 
@@ -148,8 +149,8 @@ go run ./cmd/api config check --config config.yaml --set greeting.prefix=Welcome
 
 `runApplication` 先创建空 `app.Group`；组合 Hook 内构造完整 HTTP 路由和服务，再通过
 `Group.Add` 注册。新增关键后台任务沿用该入口，无需额外 lazyGroup。正常停机先排空
-服务；组合 Hook 的 Stop 再调用 Group.Close，并回收组合期资源，最后关闭 SQL/Redis。
-启动部分失败也走同一路径，尚未接收请求的已注册服务同样会被关闭。
+服务，组合 Hook 的 Stop 回收组合期资源，最后关闭 SQL/Redis。
+启动失败时，App 先关闭已注册服务，再逆序停止已进入的 Hook。
 
 需要在组合期打开客户端、provider 或流资源时，命名回调中的 `cleanup *app.Cleanup`
 参数，取得资源后立即 `cleanup.Add("具体名称", closeCallback)`；失败时调用者仍须自行

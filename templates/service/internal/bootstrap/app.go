@@ -30,7 +30,7 @@ func runApplication(ctx context.Context, s settings, lg *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	compose := owned.compositionHook(services, func(_ context.Context, deps dependencies, _ *app.Cleanup) error {
+	compose := owned.compositionHook(func(_ context.Context, deps dependencies, _ *app.Cleanup) error {
 		// Build exactly one complete HTTP router after its dependencies are ready.
 		// Authenticated applications use NewAuthenticated at this same boundary.
 		routes, err := handler(s, lg, checker, ids)

@@ -33,7 +33,7 @@ func TestGroupAddsServicesDuringComposition(t *testing.T) {
 	base, worker := newAddedService(), newAddedService()
 	group, err := app.NewGroup()
 	require.NoError(t, err)
-	application, err := app.New(group, app.Options{Hooks: []app.Hook{{Name: "compose", Stop: func(context.Context) error { return group.Close() }, Start: func(context.Context) error {
+	application, err := app.New(group, app.Options{Hooks: []app.Hook{{Name: "compose", Start: func(context.Context) error {
 		return group.Add(app.NamedService{Name: "http", Service: base}, app.NamedService{Name: "worker", Service: worker})
 	}}}})
 	require.NoError(t, err)
@@ -108,7 +108,7 @@ func TestRegisteredServicesCloseOnStartupRollback(t *testing.T) {
 	group, err := app.NewGroup()
 	require.NoError(t, err)
 	failure := errors.New("composition failed")
-	application, err := app.New(group, app.Options{Hooks: []app.Hook{{Name: "compose", Stop: func(context.Context) error { return group.Close() }, Start: func(context.Context) error {
+	application, err := app.New(group, app.Options{Hooks: []app.Hook{{Name: "compose", Start: func(context.Context) error {
 		if err := group.Add(app.NamedService{Name: "http", Service: base}, app.NamedService{Name: "worker", Service: worker}); err != nil {
 			return err
 		}

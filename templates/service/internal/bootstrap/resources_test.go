@@ -46,7 +46,7 @@ func TestCompositionResolvesResourcesBeforeServingAndRollsBack(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			hooks := append(owned.hooks(), owned.compositionHook(services, func(_ context.Context, deps dependencies, cleanup *app.Cleanup) error {
+			hooks := append(owned.hooks(), owned.compositionHook(func(_ context.Context, deps dependencies, cleanup *app.Cleanup) error {
 				events = append(events, "compose")
 				if deps.Database != db || deps.Cache != cache {
 					t.Fatal("typed dependencies lost")
@@ -83,8 +83,10 @@ func TestCompositionResolvesResourcesBeforeServingAndRollsBack(t *testing.T) {
 			want := []string{"open database", "open redis", "compose"}
 			if !fail {
 				want = append(want, "serve", "drain service")
+			} else {
+				want = append(want, "close service")
 			}
-			want = append(want, "close service", "close client", "close redis", "close database")
+			want = append(want, "close client", "close redis", "close database")
 			if !reflect.DeepEqual(events, want) {
 				t.Fatalf("events %v want %v", events, want)
 			}

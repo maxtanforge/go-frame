@@ -68,7 +68,7 @@ func (r resources) resolve() (dependencies, error) {
 }
 
 // Declare dependencies explicitly: app compiles startup before serving.
-func (r resources) compositionHook(services *app.Group, compose func(context.Context, dependencies, *app.Cleanup) error) app.Hook {
+func (r resources) compositionHook(compose func(context.Context, dependencies, *app.Cleanup) error) app.Hook {
 	var cleanup app.Cleanup
 	var dependsOn []string
 	if r.database != nil {
@@ -77,10 +77,7 @@ func (r resources) compositionHook(services *app.Group, compose func(context.Con
 	if r.cache != nil {
 		dependsOn = append(dependsOn, r.cache.Name())
 	}
-	return app.Hook{Name: "compose", DependsOn: dependsOn, Stop: func(ctx context.Context) error {
-		// Startup rollback also closes accepted services before their resources.
-		return errors.Join(services.Close(), cleanup.Stop(ctx))
-	}, Start: func(ctx context.Context) error {
+	return app.Hook{Name: "compose", DependsOn: dependsOn, Stop: cleanup.Stop, Start: func(ctx context.Context) error {
 		deps, err := r.resolve()
 		if err != nil {
 			return err

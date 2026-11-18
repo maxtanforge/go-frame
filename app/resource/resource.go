@@ -148,6 +148,10 @@ func (r *Resource[T]) stop(ctx context.Context) error {
 		r.mu.Unlock()
 		return err
 	}
+	if ctx == nil {
+		r.mu.Unlock()
+		return fmt.Errorf("resource %s: stop context is required", r.name)
+	}
 	r.state = stopped
 	v := r.value
 	acquired := r.acquired
@@ -156,8 +160,10 @@ func (r *Resource[T]) stop(ctx context.Context) error {
 	r.mu.Unlock()
 	var err error
 	if acquired && !isnil.Check(v) {
-		if cause := r.close(ctx, v); cause != nil {
-			err = fmt.Errorf("resource %s: close: %w", r.name, cause)
+		var cleanup app.Cleanup
+		err = cleanup.Add(r.name, func(ctx context.Context) error { return r.close(ctx, v) })
+		if err == nil {
+			err = cleanup.Stop(ctx)
 		}
 	}
 	r.mu.Lock()

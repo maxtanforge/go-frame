@@ -31,7 +31,7 @@ return application.Run(ctx)
 
 需要启动后才取得 queue 时，先以 HTTP 等已有服务创建 Group，再在资源 Hook 后的
 组合 Hook 创建 worker 并调用 `services.Add(app.NamedService{Name: "worker", Service: worker})`。
-组合 Hook 的 Stop 返回 `services.Close()`，保证组合失败也清理已接纳的任务；Add 拒绝时
+组合失败时，App 在停止 Hook 前关闭 Group 已接纳的任务；Add 拒绝时
 创建方负责关闭未被接纳的 worker。Run 或停机开始后不能再增加成员，无需业务维护 lazyGroup。
 
 本例一次处理一条消息；取消后停止拉取，协作取消当前处理，再用独立、有限的 500 毫秒上下文 Ack/Nack。处理成功才 Ack；处理失败调用业务 Nack 策略；确认失败返回错误使关键 worker 退出，由 app 排空服务。业务 panic 由 app.Task 上报，未确认消息的重新投递由 broker 管理。这里只演示协作取消，不承诺停机后继续完成任意长任务。App 退出预算需容纳确认和资源清理，必要时调整业务确认预算。

@@ -20,6 +20,15 @@ func budget(t *testing.T) *concurrency.Executor {
 	return e
 }
 
+func TestShutdownDoesNotRepeatRunFailure(t *testing.T) {
+	cause := errors.New("report failed")
+	w, err := New(1, budget(t), func(context.Context, string) error { return nil }, func(Result) { panic(cause) })
+	require.NoError(t, err)
+	require.NoError(t, w.Submit(context.Background(), "event"))
+	require.ErrorIs(t, w.Run(), cause)
+	require.NoError(t, w.Shutdown(context.Background()))
+}
+
 func TestAdmissionIsBoundedAndShutdownDrainsAcceptedWork(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		started, release := make(chan struct{}), make(chan struct{})

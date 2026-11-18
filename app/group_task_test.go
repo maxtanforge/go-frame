@@ -55,10 +55,122 @@ func TestGroupAppDrainsSiblingsBeforeResources(t *testing.T) {
 	if !strings.Contains(err.Error(), "sibling") {
 		t.Fatal(err)
 	}
+	if count := strings.Count(err.Error(), "app: run first: first"); count != 1 {
+		t.Fatalf("first exit reported %d times: %v", count, err)
+	}
 	if g.Run() == nil {
 		t.Fatal("second Run accepted")
 	}
 }
+func TestGroupAppKeepsTaskFailureInRunPhase(t *testing.T) {
+	failure := errors.New("task callback failed")
+	task, err := NewTask(func(context.Context) error { return failure })
+	if err != nil {
+		t.Fatal(err)
+	}
+	group, err := NewGroup(NamedService{Name: "task", Service: task})
+	if err != nil {
+		t.Fatal(err)
+	}
+	application, err := New(group, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = application.Run(bounded(t))
+	if !errors.Is(err, failure) || strings.Count(err.Error(), failure.Error()) != 1 {
+		t.Fatalf("expected a single run failure, got %v", err)
+	}
+	if strings.Contains(err.Error(), "app: shutdown") {
+		t.Fatalf("task run error reported as a shutdown error: %v", err)
+	}
+}
+
+func TestNestedGroupDrainsAfterMemberRunFailure(t *testing.T) {
+	failure := errors.New("nested run failure")
+	var forced atomic.Int32
+	leaf := &testService{
+		run:      func() error { return failure },
+		shutdown: func(context.Context) error { return nil },
+		close:    func() error { forced.Add(1); return nil },
+	}
+	inner, err := NewGroup(NamedService{Name: "leaf", Service: leaf})
+	if err != nil {
+		t.Fatal(err)
+	}
+	outer, err := NewGroup(NamedService{Name: "inner", Service: inner})
+	if err != nil {
+		t.Fatal(err)
+	}
+	application, err := New(outer, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = application.Run(bounded(t))
+	if !errors.Is(err, failure) || strings.Count(err.Error(), failure.Error()) != 1 || forced.Load() != 0 {
+		t.Fatalf("run error %v, forced closes %d", err, forced.Load())
+	}
+}
+
+func TestNestedGroupCloseFailureReportedOnce(t *testing.T) {
+	failure := errors.New("nested close failure")
+	leaf := &testService{
+		shutdown: func(context.Context) error { return nil },
+		close:    func() error { return failure },
+	}
+	inner, err := NewGroup(NamedService{Name: "leaf", Service: leaf})
+	if err != nil {
+		t.Fatal(err)
+	}
+	outer, err := NewGroup(NamedService{Name: "inner", Service: inner})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := outer.Close(); !errors.Is(err, failure) {
+		t.Fatalf("Close lost failure: %v", err)
+	}
+	err = outer.Shutdown(bounded(t))
+	if !errors.Is(err, failure) || strings.Count(err.Error(), failure.Error()) != 1 {
+		t.Fatalf("expected one close failure: %v", err)
+	}
+}
+
+func TestStartupRollbackClosesCyclicGroupLeaves(t *testing.T) {
+	var closed atomic.Int32
+	group, err := NewGroup(NamedService{Name: "leaf", Service: &testService{
+		close: func() error { closed.Add(1); return nil },
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := group.Add(NamedService{Name: "recursive", Service: group}); err != nil {
+		t.Fatal(err)
+	}
+	failure := errors.New("startup failed")
+	application, err := New(group, Options{Hooks: []Hook{{Name: "resource",
+		Start: func(context.Context) error { return failure },
+		Stop: func(context.Context) error {
+			if closed.Load() != 1 {
+				return errors.New("resource stopped before leaf was closed")
+			}
+			return nil
+		},
+	}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := bounded(t)
+	done := make(chan error, 1)
+	go func() { done <- application.Run(ctx) }()
+	select {
+	case err := <-done:
+		if !errors.Is(err, failure) || err.Error() != "app: start resource: startup failed" {
+			t.Fatalf("rollback failed: %v", err)
+		}
+	case <-ctx.Done():
+		t.Fatal("cyclic group blocked rollback")
+	}
+}
+
 func TestGroupEarlyExitAndPanic(t *testing.T) {
 	for _, panicRun := range []bool{false, true} {
 		t.Run(map[bool]string{false: "nil", true: "panic"}[panicRun], func(t *testing.T) {
@@ -267,6 +379,7 @@ func TestGroupAppClosesFailedDrainBeforeBudgetExpires(t *testing.T) {
 	gracefulRelease := make(chan struct{})
 	drainErr, closeErr := errors.New("drain failed"), errors.New("close failed")
 	var closes atomic.Int32
+	var gracefulCloses atomic.Int32
 	failed := &testService{
 		run:      func() error { started <- struct{}{}; <-failedRelease; close(failedExited); return nil },
 		shutdown: func(context.Context) error { return drainErr },
@@ -289,7 +402,7 @@ func TestGroupAppClosesFailedDrainBeforeBudgetExpires(t *testing.T) {
 				return ctx.Err()
 			}
 		},
-		close: func() error { return nil },
+		close: func() error { gracefulCloses.Add(1); return nil },
 	}
 	g, _ := NewGroup(NamedService{Name: "failed", Service: failed}, NamedService{Name: "graceful", Service: graceful})
 	a, _ := New(g, Options{ShutdownTimeout: 100 * time.Millisecond, Hooks: []Hook{{Name: "resource", Stop: func(ctx context.Context) error {
@@ -315,11 +428,17 @@ func TestGroupAppClosesFailedDrainBeforeBudgetExpires(t *testing.T) {
 		if !errors.Is(err, drainErr) || !errors.Is(err, closeErr) {
 			t.Fatalf("lost drain/close errors: %v", err)
 		}
+		if strings.Count(err.Error(), "app: close failed: close failed") != 1 {
+			t.Fatalf("close failure reported more than once: %v", err)
+		}
 	case <-bounded(t).Done():
 		t.Fatal("App hung")
 	}
 	if closes.Load() != 1 {
 		t.Fatalf("failed child closed %d times", closes.Load())
+	}
+	if gracefulCloses.Load() != 0 {
+		t.Fatal("gracefully drained child was forced closed")
 	}
 	if err := g.Close(); !errors.Is(err, closeErr) {
 		t.Fatalf("cached close error lost: %v", err)

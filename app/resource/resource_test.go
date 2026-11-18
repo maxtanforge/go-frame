@@ -19,6 +19,33 @@ type managed struct {
 
 type valueManaged struct{}
 
+func TestStopRetainsClosePanic(t *testing.T) {
+	cause := errors.New("close panic")
+	var calls int
+	r, err := resource.New(resource.Options[int]{
+		Name: "handle",
+		Open: func(context.Context) (int, error) { return 1, nil },
+		Close: func(context.Context, int) error {
+			calls++
+			panic(cause)
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	hook := r.Hook()
+	ctx := context.Background()
+	if err := hook.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	first := hook.Stop(ctx)
+	second := hook.Stop(ctx)
+	var diagnostic *app.PanicError
+	if !errors.Is(first, cause) || !errors.As(second, &diagnostic) || first != second || calls != 1 {
+		t.Fatalf("first %v, second %v, calls %d", first, second, calls)
+	}
+}
+
 func newManagedResource(name string, open func(context.Context) (*managed, error)) (*resource.Resource[*managed], error) {
 	return resource.New(resource.Options[*managed]{Name: name, Open: open,
 		Probe: func(ctx context.Context, m *managed) error { return m.Ping(ctx) },

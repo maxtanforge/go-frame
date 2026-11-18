@@ -92,6 +92,7 @@ func New(service Service, opts Options) (*App, error) {
 // error. Service Run, Shutdown and Close panics become PanicError; shutdown
 // failures still attempt Close and reverse resource cleanup.
 // Cleanup uses a fresh context so cancellation cannot skip cleanup.
+// On startup failure, App closes a directly managed Group before stopping hooks.
 func (a *App) Run(ctx context.Context) error {
 	if ctx == nil {
 		return errors.New("app: context is required")
@@ -151,10 +152,20 @@ func (a *App) Run(ctx context.Context) error {
 		}
 		timer.Stop()
 	}
-	drainErr := runSafely(func() error { return a.service.Shutdown(drainCtx) })
+	group, grouped := a.service.(*Group)
+	drainErr := runSafely(func() error {
+		return drainService(drainCtx, a.service)
+	})
+	forceClose := func() error {
+		if grouped {
+			group.closePending()
+			return nil // Member close failures are collected with the group diagnostics.
+		}
+		return runSafely(a.service.Close)
+	}
 	var forceErr error
 	if drainErr != nil {
-		forceErr = runSafely(a.service.Close)
+		forceErr = forceClose()
 	}
 	if !finished {
 		select {
@@ -162,7 +173,7 @@ func (a *App) Run(ctx context.Context) error {
 		case <-drainCtx.Done():
 			if drainErr == nil {
 				drainErr = drainCtx.Err()
-				forceErr = runSafely(a.service.Close)
+				forceErr = forceClose()
 			}
 			// Prefer an already available result over the simultaneous deadline.
 			// A service that ignores Close may outlive the budget; never wait for it
@@ -173,13 +184,33 @@ func (a *App) Run(ctx context.Context) error {
 			}
 		}
 	}
-	return errors.Join(runErr, notificationErr, drainErr, forceErr, a.stop(stopCtx, active))
+	var groupErr error
+	if grouped {
+		groupErr = group.diagnostics(runErr)
+	}
+	return errors.Join(runErr, notificationErr, drainErr, forceErr, groupErr, a.stop(stopCtx, active))
+}
+
+func drainService(ctx context.Context, service Service) error {
+	switch s := service.(type) {
+	case *Task:
+		return s.drain(ctx)
+	case *Group:
+		return s.waitForDrain(ctx)
+	default:
+		return service.Shutdown(ctx)
+	}
 }
 
 func (a *App) rollback(active int) error {
 	ctx, cancel := context.WithTimeout(context.Background(), a.opts.ShutdownTimeout)
 	defer cancel()
-	return a.stop(ctx, active)
+	var closeErr error
+	// A Group owns its accepted services before Run, including partial composition.
+	if group, ok := a.service.(*Group); ok {
+		closeErr = runSafely(group.Close)
+	}
+	return errors.Join(closeErr, a.stop(ctx, active))
 }
 
 func (a *App) stop(ctx context.Context, active int) error {

@@ -75,10 +75,16 @@ return application.Run(ctx)
 `Group.Add` registers additional services during startup composition, after
 resource hooks have supplied their handles. Registration freezes atomically when
 Run, Shutdown or Close begins. A batch with an invalid/duplicate name or nil
-service adds nothing; the caller still owns rejected services. Register the
-composition Hook's Stop to call `group.Close()` so startup rollback also closes
-accepted services before their dependencies; App rollback stops hooks and does
-not invoke service Close automatically. Normal shutdown still drains Group first.
+service adds nothing; the caller still owns rejected services. When a Group is
+passed directly to App, startup rollback closes its accepted services before
+stopping any hooks. The composition Hook's Stop owns its other local cleanup.
+
+升级时，若组合 Hook 的 Stop 已有 `group.Close()`，请移除该调用并保留其他清理。
+App 直接管理 Group 时已负责启动回滚，重复调用会再次报告缓存的关闭错误。
+
+App 管理 Group 时，成员排空失败由 Group 执行强制关闭。排空预算耗尽时，Group 只关闭尚未完成排空的成员。
+成员的运行、排空和关闭错误一并返回。直接调用 Group.Shutdown 仍可获得成员运行诊断，
+直接调用 Task.Shutdown 仍可获得任务回调错误。
 
 In v0.2.1, `NewGroup()` may initially be empty. Construct HTTP and
 workers inside the composition Hook once their dependencies are available, then
@@ -103,10 +109,7 @@ compose := app.Hook{
         }
         return composeServices(ctx, client, services)
     },
-    Stop: func(ctx context.Context) error {
-        // Also covers accepted services when composition fails before Run.
-        return errors.Join(services.Close(), cleanup.Stop(ctx))
-    },
+    Stop: cleanup.Stop,
 }
 ```
 
@@ -125,11 +128,11 @@ Every member is critical: an early return, even nil, makes Group.Run return so
 App begins draining siblings. Group.Run does not itself stop siblings; standalone
 callers must call Shutdown and, on timeout or failure, Close. Child Run, Shutdown and Close panics
 become named errors. Shutdown calls every member concurrently with the identical
-context and waits for all child Run calls before resource cleanup. Errors from
+context and waits for child Run calls within that budget. Errors from
 Run, Shutdown and Close retain member names and support `errors.Is`.
-If a child's Shutdown fails, Group immediately closes that child while other
-members continue draining. This preserves the remaining shutdown budget for
-resource cleanup. These closes share the same at-most-once cache as Group.Close.
+若普通成员的 Shutdown 失败，Group 立即关闭该成员，其他成员继续排空。嵌套 Group
+沿用相同的排空预算，超时后只强制关闭仍未排空的成员。这些关闭操作共享 Group.Close
+的至多一次关闭记录。
 
 Group and Task are one-shot and safe for concurrent stop calls. Stopping before
 Run prevents startup. The first Group.Shutdown call owns the child shutdown

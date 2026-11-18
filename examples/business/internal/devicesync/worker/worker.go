@@ -136,13 +136,13 @@ func (w *Worker) Shutdown(ctx context.Context) error {
 		return errors.New("device worker shutdown context is required")
 	}
 	if !w.stopAdmission() {
-		return w.task.Shutdown(ctx)
+		return w.task.Close()
 	}
 	select {
 	case <-w.done:
-		return w.task.Shutdown(ctx)
+		return nil
 	case <-ctx.Done():
-		return errors.Join(ctx.Err(), w.task.Shutdown(ctx))
+		return errors.Join(ctx.Err(), w.task.Close())
 	}
 }
 

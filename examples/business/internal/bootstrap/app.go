@@ -69,9 +69,7 @@ func runApplication(ctx context.Context, s Settings, lg *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	compose := app.Hook{Name: "categories", DependsOn: []string{pool.Name()}, Stop: func(context.Context) error {
-		return services.Close()
-	}, Start: func(context.Context) error {
+	compose := app.Hook{Name: "categories", DependsOn: []string{pool.Name()}, Start: func(context.Context) error {
 		db, err := pool.Value()
 		if err != nil {
 			return err

@@ -47,6 +47,9 @@ before successful startup or after Stop. Startup errors preserve their causes fo
 `errors.Is`. App rolls back failed hooks; manual hook users must also call Stop
 after failed Start.
 
+Stop caches the first close result, including an `app.PanicError` if the close
+callback panics. Repeated Stop calls return that diagnostic without closing again.
+
 A nonnil value returned together with an Open error is retained for cleanup.
 Nil and typed-nil values are rejected and never passed to Probe or Close.
 For non-nilable value types, every Open return is an acquisition, including zero

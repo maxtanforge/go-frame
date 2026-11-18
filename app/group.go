@@ -26,9 +26,11 @@ type Group struct {
 	runDone          chan struct{}
 	first            chan error
 	runErrors        []error
+	runFinished      []bool
 	shutdownOnce     sync.Once
 	shutdownDone     chan struct{}
 	shutdownErrors   []error
+	shutdownFinished []bool
 	closeOnce        []sync.Once
 	closeErrors      []error
 }
@@ -37,10 +39,11 @@ type Group struct {
 // a composition Hook can Add services after their resources become available.
 // Run requires at least one member unless the group has already been stopped.
 func NewGroup(members ...NamedService) (*Group, error) {
-	if err := validateGroupMembers(nil, members); err != nil {
+	g := &Group{runDone: make(chan struct{}), shutdownDone: make(chan struct{})}
+	if err := g.Add(members...); err != nil {
 		return nil, err
 	}
-	return &Group{members: append([]NamedService(nil), members...), runDone: make(chan struct{}), first: make(chan error, len(members)), runErrors: make([]error, len(members)), shutdownDone: make(chan struct{}), shutdownErrors: make([]error, len(members)), closeOnce: make([]sync.Once, len(members)), closeErrors: make([]error, len(members))}, nil
+	return g, nil
 }
 
 func validateGroupMembers(existing, members []NamedService) error {
@@ -87,7 +90,9 @@ func (g *Group) Add(members ...NamedService) error {
 	// No lifecycle callback has run, so rebuilding these empty slots is safe.
 	g.first = make(chan error, n)
 	g.runErrors = make([]error, n)
+	g.runFinished = make([]bool, n)
 	g.shutdownErrors = make([]error, n)
+	g.shutdownFinished = make([]bool, n)
 	g.closeOnce = make([]sync.Once, n)
 	g.closeErrors = make([]error, n)
 	return nil
@@ -122,6 +127,7 @@ func (g *Group) Run() error {
 				err = fmt.Errorf("app: service %s exited before shutdown", m.Name)
 			}
 			g.runErrors[i] = err
+			g.runFinished[i] = true
 			g.mu.Unlock()
 			g.first <- err
 		})
@@ -137,14 +143,18 @@ func (g *Group) stop() {
 	if !g.stopped {
 		g.stopped = true
 		if !g.started {
+			for i := range g.members {
+				g.runFinished[i] = true
+			}
 			close(g.runDone)
 		}
 	}
 }
 
 // Shutdown invokes every child concurrently with the same context, then waits
-// for shutdown callbacks and all child Run calls. A child whose Shutdown fails
-// is immediately closed while siblings continue draining. The first call owns the child
+// for shutdown callbacks and child Run calls within ctx. A member whose Shutdown
+// fails is closed while siblings continue draining. For a nested Group that
+// exhausts its budget, only pending members are force-closed. The first call owns the child
 // shutdown context; later calls only wait using their own budgets. Errors retain
 // member names and support errors.Is. Child stop panics become PanicError without
 // interrupting sibling cleanup. Nil contexts are rejected.
@@ -152,18 +162,25 @@ func (g *Group) Shutdown(ctx context.Context) error {
 	if ctx == nil {
 		return errors.New("app: shutdown context is required")
 	}
+	return errors.Join(g.waitForDrain(ctx), g.diagnostics(nil))
+}
+
+func (g *Group) waitForDrain(ctx context.Context) error {
 	g.stop()
 	g.shutdownOnce.Do(func() {
 		var wg sync.WaitGroup
 		for i, m := range g.members {
 			wg.Go(func() {
-				err := runSafely(func() error { return m.Service.Shutdown(ctx) })
+				err := runSafely(func() error { return drainService(ctx, m.Service) })
 				if err != nil {
 					g.mu.Lock()
 					g.shutdownErrors[i] = fmt.Errorf("app: shutdown %s: %w", m.Name, err)
 					g.mu.Unlock()
-					g.closeMember(i)
+					g.forceMember(i)
 				}
+				g.mu.Lock()
+				g.shutdownFinished[i] = true
+				g.mu.Unlock()
 			})
 		}
 		go func() { wg.Wait(); close(g.shutdownDone) }()
@@ -184,27 +201,92 @@ func (g *Group) Shutdown(ctx context.Context) error {
 			break
 		}
 	}
+	return waitErr
+}
+
+func (g *Group) diagnostics(reportedRunErr error) error {
+	return g.collectDiagnostics(reportedRunErr, make(map[*Group]bool), false)
+}
+
+func (g *Group) collectDiagnostics(reportedRunErr error, parents map[*Group]bool, onlyClose bool) error {
+	if parents[g] {
+		return nil
+	}
+	parents[g] = true
+	defer delete(parents, g)
 	g.mu.Lock()
-	defer g.mu.Unlock()
-	errs := append([]error{waitErr}, g.shutdownErrors...)
-	errs = append(errs, g.runErrors...)
-	errs = append(errs, g.closeErrors...)
+	errs := append([]error(nil), g.closeErrors...)
+	var runErrors []error
+	if !onlyClose {
+		errs = append(errs, g.shutdownErrors...)
+		runErrors = append([]error(nil), g.runErrors...)
+	}
+	members := g.members
+	g.mu.Unlock()
+	for i, member := range members {
+		var runErr error
+		if !onlyClose {
+			runErr = runErrors[i]
+			// Run returns the same wrapped member error stored in this slice.
+			if runErr != nil && runErr != reportedRunErr {
+				errs = append(errs, runErr)
+			}
+		}
+		if child, ok := member.Service.(*Group); ok {
+			if childErr := child.collectDiagnostics(errors.Unwrap(runErr), parents, onlyClose); childErr != nil {
+				errs = append(errs, fmt.Errorf("app: group %s: %w", member.Name, childErr))
+			}
+		}
+	}
 	return errors.Join(errs...)
+}
+
+// On budget exhaustion, only members that still have work in flight need Close.
+func (g *Group) closePending() {
+	var wg sync.WaitGroup
+	g.closeMembers(&wg, make(map[*Group]bool), true)
+	wg.Wait()
+}
+
+func (g *Group) closeMembers(wg *sync.WaitGroup, seen map[*Group]bool, pendingOnly bool) {
+	if seen[g] {
+		return
+	}
+	seen[g] = true
+	g.stop()
+	g.mu.Lock()
+	var pending []int
+	for i := range g.members {
+		if !pendingOnly || !g.runFinished[i] || !g.shutdownFinished[i] {
+			pending = append(pending, i)
+		}
+	}
+	g.mu.Unlock()
+	for _, i := range pending {
+		if child, ok := g.members[i].Service.(*Group); ok {
+			child.closeMembers(wg, seen, pendingOnly)
+		} else {
+			wg.Go(func() { g.closeMember(i) })
+		}
+	}
+}
+
+func (g *Group) forceMember(i int) {
+	if child, ok := g.members[i].Service.(*Group); ok {
+		child.closePending()
+		return
+	}
+	g.closeMember(i)
 }
 
 // Close calls each child's immediate Close at most once and caches all errors,
 // including PanicError diagnostics from child panics.
 // It does not wait for Run; each child Close must promptly unblock its Run.
 func (g *Group) Close() error {
-	g.stop()
 	var wg sync.WaitGroup
-	for i := range g.members {
-		wg.Go(func() { g.closeMember(i) })
-	}
+	g.closeMembers(&wg, make(map[*Group]bool), false)
 	wg.Wait()
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	return errors.Join(g.closeErrors...)
+	return g.collectDiagnostics(nil, make(map[*Group]bool), true)
 }
 
 func (g *Group) closeMember(i int) {
